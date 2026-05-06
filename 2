@@ -1,0 +1,41 @@
+using System;
+using System.Collections.Generic;
+
+class Node
+{
+    public string Value { get; set; }
+    public List<Node> Children { get; set; } = new List<Node>();
+
+    public Node(string value)
+    {
+        Value = value;
+    }
+
+    public void PrintTree(int indent = 0)
+    {
+        Console.WriteLine(new string(' ', indent) + Value);
+        foreach (var child in Children)
+        {
+            child.PrintTree(indent + 2);
+        }
+    }
+}
+
+// Пример конфигурации дерева
+class Program
+{
+    static void Main()
+    {
+        var root = new Node("Root");
+        var child1 = new Node("Child1");
+        var child2 = new Node("Child2");
+        var subChild = new Node("SubChild1");
+
+        child1.Children.Add(subChild);
+        root.Children.Add(child1);
+        root.Children.Add(child2);
+
+        root.PrintTree();
+    }
+}
+
