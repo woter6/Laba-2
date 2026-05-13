@@ -1,0 +1,93 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Net;
+
+namespace Task_2_Sync
+{
+    internal class Program
+    {
+        private static readonly string[] Urls =
+        {
+            "https://jsonplaceholder.typicode.com/posts/1",
+            "https://httpbin.org/json",
+            "https://api.github.com"
+        };
+
+        static void Main()
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.InputEncoding = System.Text.Encoding.UTF8;
+
+            Stopwatch stopwatch = Stopwatch.StartNew();
+
+            try
+            {
+                foreach (string url in Urls)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine($"Запрос к серверу: {url}");
+
+                    string response = SendRequest(url);
+
+                    Console.WriteLine("Ответ сервера в формате JSON:");
+                    Console.WriteLine(response);
+                }
+
+                stopwatch.Stop();
+
+                Console.WriteLine();
+                Console.WriteLine($"Общее время работы: {stopwatch.ElapsedMilliseconds} мс");
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+
+                Console.WriteLine();
+                Console.WriteLine("Ошибка при выполнении запроса:");
+                Console.WriteLine(ex.Message);
+                Console.WriteLine($"Время до ошибки: {stopwatch.ElapsedMilliseconds} мс");
+            }
+
+            Console.ReadKey();
+        }
+
+        private static string SendRequest(string url)
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "GET";
+
+            request.UserAgent = "CSharpConsoleApp";
+
+            try
+            {
+                using HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+
+                if ((int)response.StatusCode < 200 || (int)response.StatusCode >= 300)
+                {
+                    throw new Exception($"Сервер вернул негативный ответ: {(int)response.StatusCode} {response.StatusDescription}");
+                }
+
+                using Stream responseStream = response.GetResponseStream();
+
+                if (responseStream == null)
+                {
+                    throw new Exception("Сервер вернул пустой ответ.");
+                }
+
+                using StreamReader reader = new StreamReader(responseStream);
+
+                return reader.ReadToEnd();
+            }
+            catch (WebException ex)
+            {
+                if (ex.Response is HttpWebResponse errorResponse)
+                {
+                    throw new Exception($"Сервер вернул ошибку: {(int)errorResponse.StatusCode} {errorResponse.StatusDescription}");
+                }
+
+                throw new Exception($"Ошибка соединения: {ex.Message}");
+            }
+        }
+    }
+}
