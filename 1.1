@@ -1,0 +1,177 @@
+using System;
+using System.Diagnostics;
+using System.Threading;
+
+namespace Task_1_1
+{
+    enum SyncType
+    {
+        Monitor,
+        Mutex,
+        Semaphore
+    }
+
+    internal class Program
+    {
+        private const int StartNumber = 1;
+        private const int EndNumber = 10000;
+        private const int ThreadCount = 4;
+
+        private static int _primeCount;
+
+        private static readonly object MonitorLocker = new object();
+        private static readonly object ConsoleLocker = new object();
+
+        private static readonly Mutex MutexLocker = new Mutex();
+        private static readonly Semaphore SemaphoreLocker = new Semaphore(1, 1);
+
+        static void Main()
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.InputEncoding = System.Text.Encoding.UTF8;
+
+            RunVersion(SyncType.Monitor);
+            RunVersion(SyncType.Mutex);
+            RunVersion(SyncType.Semaphore);
+
+            Console.WriteLine();
+            Console.WriteLine("Все версии завершены.");
+            Console.ReadKey();
+        }
+
+        private static void RunVersion(SyncType syncType)
+        {
+            _primeCount = 0;
+
+            Console.WriteLine();
+            Console.WriteLine("====================================");
+            Console.WriteLine($"Версия синхронизации: {syncType}");
+            Console.WriteLine("====================================");
+
+            Thread[] threads = new Thread[ThreadCount];
+
+            int totalNumbers = EndNumber - StartNumber + 1;
+            int partSize = totalNumbers / ThreadCount;
+
+            Stopwatch stopwatch = Stopwatch.StartNew();
+
+            for (int i = 0; i < ThreadCount; i++)
+            {
+                int threadNumber = i + 1;
+
+                int rangeStart = StartNumber + i * partSize;
+                int rangeEnd = i == ThreadCount - 1
+                    ? EndNumber
+                    : rangeStart + partSize - 1;
+
+                threads[i] = new Thread(() =>
+                {
+                    ProcessRange(threadNumber, rangeStart, rangeEnd, syncType);
+                });
+
+                threads[i].Start();
+            }
+
+            foreach (Thread thread in threads)
+            {
+                thread.Join();
+            }
+
+            stopwatch.Stop();
+
+            Console.WriteLine();
+            Console.WriteLine($"Общее количество простых чисел: {_primeCount}");
+            Console.WriteLine($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
+        }
+
+        private static void ProcessRange(int threadNumber, int from, int to, SyncType syncType)
+        {
+            for (int number = from; number <= to; number++)
+            {
+                PrintCurrentNumber(threadNumber, number);
+
+                if (IsPrime(number))
+                {
+                    IncrementPrimeCount(syncType);
+
+                    lock (ConsoleLocker)
+                    {
+                        Console.WriteLine($"Поток {threadNumber}: найдено простое число {number}");
+                    }
+                }
+            }
+        }
+
+        private static void IncrementPrimeCount(SyncType syncType)
+        {
+            switch (syncType)
+            {
+                case SyncType.Monitor:
+                    Monitor.Enter(MonitorLocker);
+                    try
+                    {
+                        _primeCount++;
+                    }
+                    finally
+                    {
+                        Monitor.Exit(MonitorLocker);
+                    }
+                    break;
+
+                case SyncType.Mutex:
+                    MutexLocker.WaitOne();
+                    try
+                    {
+                        _primeCount++;
+                    }
+                    finally
+                    {
+                        MutexLocker.ReleaseMutex();
+                    }
+                    break;
+
+                case SyncType.Semaphore:
+                    SemaphoreLocker.WaitOne();
+                    try
+                    {
+                        _primeCount++;
+                    }
+                    finally
+                    {
+                        SemaphoreLocker.Release();
+                    }
+                    break;
+            }
+        }
+
+        private static void PrintCurrentNumber(int threadNumber, int number)
+        {
+            lock (ConsoleLocker)
+            {
+                Console.WriteLine($"Поток {threadNumber}: проверяет число {number}");
+            }
+        }
+
+        private static bool IsPrime(int number)
+        {
+            if (number < 2)
+                return false;
+
+            if (number == 2)
+                return true;
+
+            if (number % 2 == 0)
+                return false;
+
+            int limit = (int)Math.Sqrt(number);
+
+            for (int i = 3; i <= limit; i += 2)
+            {
+                if (number % i == 0)
+                    return false;
+            }
+
+            return true;
+        }
+    }
+}
