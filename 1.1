@@ -2,176 +2,144 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 
-namespace Task_1_1
+class Program
 {
-    enum SyncType
+    private const int Start = 1;
+    private const int End = 10000;
+    private const int ThreadCount = 4;
+
+    private static int primeCount = 0;
+
+    private static readonly object monitorLock = new object();
+    private static readonly Mutex mutex = new Mutex();
+    private static readonly Semaphore semaphore = new Semaphore(1, 1);
+
+    static void Main()
     {
-        Monitor,
-        Mutex,
-        Semaphore
+        Console.WriteLine("Задание 1.1");
+        Console.WriteLine("1 - Monitor");
+        Console.WriteLine("2 - Mutex");
+        Console.WriteLine("3 - Semaphore");
+        Console.Write("Выберите версию: ");
+
+        string choice = Console.ReadLine();
+
+        if (choice == "1")
+            RunVersion("Monitor");
+        else if (choice == "2")
+            RunVersion("Mutex");
+        else if (choice == "3")
+            RunVersion("Semaphore");
+        else
+            Console.WriteLine("Неверный выбор.");
     }
 
-    internal class Program
+    static void RunVersion(string syncType)
     {
-        private const int StartNumber = 1;
-        private const int EndNumber = 10000;
-        private const int ThreadCount = 4;
+        primeCount = 0;
 
-        private static int _primeCount;
+        Thread[] threads = new Thread[ThreadCount];
+        Stopwatch stopwatch = Stopwatch.StartNew();
 
-        private static readonly object MonitorLocker = new object();
-        private static readonly object ConsoleLocker = new object();
+        int totalNumbers = End - Start + 1;
+        int partSize = totalNumbers / ThreadCount;
 
-        private static readonly Mutex MutexLocker = new Mutex();
-        private static readonly Semaphore SemaphoreLocker = new Semaphore(1, 1);
-
-        static void Main()
+        for (int i = 0; i < ThreadCount; i++)
         {
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
-            Console.InputEncoding = System.Text.Encoding.UTF8;
+            int threadNumber = i + 1;
+            int rangeStart = Start + i * partSize;
+            int rangeEnd;
 
-            RunVersion(SyncType.Monitor);
-            RunVersion(SyncType.Mutex);
-            RunVersion(SyncType.Semaphore);
+            if (i == ThreadCount - 1)
+                rangeEnd = End;
+            else
+                rangeEnd = rangeStart + partSize - 1;
 
-            Console.WriteLine();
-            Console.WriteLine("Все версии завершены.");
-            Console.ReadKey();
+            threads[i] = new Thread(() =>
+            {
+                ProcessRange(threadNumber, rangeStart, rangeEnd, syncType);
+            });
+
+            threads[i].Start();
         }
 
-        private static void RunVersion(SyncType syncType)
+        for (int i = 0; i < ThreadCount; i++)
         {
-            _primeCount = 0;
-
-            Console.WriteLine();
-            Console.WriteLine("====================================");
-            Console.WriteLine($"Версия синхронизации: {syncType}");
-            Console.WriteLine("====================================");
-
-            Thread[] threads = new Thread[ThreadCount];
-
-            int totalNumbers = EndNumber - StartNumber + 1;
-            int partSize = totalNumbers / ThreadCount;
-
-            Stopwatch stopwatch = Stopwatch.StartNew();
-
-            for (int i = 0; i < ThreadCount; i++)
-            {
-                int threadNumber = i + 1;
-
-                int rangeStart = StartNumber + i * partSize;
-                int rangeEnd = i == ThreadCount - 1
-                    ? EndNumber
-                    : rangeStart + partSize - 1;
-
-                threads[i] = new Thread(() =>
-                {
-                    ProcessRange(threadNumber, rangeStart, rangeEnd, syncType);
-                });
-
-                threads[i].Start();
-            }
-
-            foreach (Thread thread in threads)
-            {
-                thread.Join();
-            }
-
-            stopwatch.Stop();
-
-            Console.WriteLine();
-            Console.WriteLine($"Общее количество простых чисел: {_primeCount}");
-            Console.WriteLine($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
+            threads[i].Join();
         }
 
-        private static void ProcessRange(int threadNumber, int from, int to, SyncType syncType)
+        stopwatch.Stop();
+
+        Console.WriteLine();
+        Console.WriteLine($"Общее количество простых чисел: {primeCount}");
+        Console.WriteLine($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
+    }
+
+    static void ProcessRange(int threadNumber, int rangeStart, int rangeEnd, string syncType)
+    {
+        for (int number = rangeStart; number <= rangeEnd; number++)
         {
-            for (int number = from; number <= to; number++)
+            Console.WriteLine($"Поток {threadNumber}: проверяется число {number}");
+
+            if (IsPrime(number))
             {
-                PrintCurrentNumber(threadNumber, number);
-
-                if (IsPrime(number))
-                {
-                    IncrementPrimeCount(syncType);
-
-                    lock (ConsoleLocker)
-                    {
-                        Console.WriteLine($"Поток {threadNumber}: найдено простое число {number}");
-                    }
-                }
+                AddPrime(syncType);
+                Console.WriteLine($"Поток {threadNumber}: найдено простое число {number}");
             }
         }
+    }
 
-        private static void IncrementPrimeCount(SyncType syncType)
+    static void AddPrime(string syncType)
+    {
+        if (syncType == "Monitor")
         {
-            switch (syncType)
+            Monitor.Enter(monitorLock);
+            try
             {
-                case SyncType.Monitor:
-                    Monitor.Enter(MonitorLocker);
-                    try
-                    {
-                        _primeCount++;
-                    }
-                    finally
-                    {
-                        Monitor.Exit(MonitorLocker);
-                    }
-                    break;
-
-                case SyncType.Mutex:
-                    MutexLocker.WaitOne();
-                    try
-                    {
-                        _primeCount++;
-                    }
-                    finally
-                    {
-                        MutexLocker.ReleaseMutex();
-                    }
-                    break;
-
-                case SyncType.Semaphore:
-                    SemaphoreLocker.WaitOne();
-                    try
-                    {
-                        _primeCount++;
-                    }
-                    finally
-                    {
-                        SemaphoreLocker.Release();
-                    }
-                    break;
+                primeCount++;
+            }
+            finally
+            {
+                Monitor.Exit(monitorLock);
             }
         }
-
-        private static void PrintCurrentNumber(int threadNumber, int number)
+        else if (syncType == "Mutex")
         {
-            lock (ConsoleLocker)
+            mutex.WaitOne();
+            try
             {
-                Console.WriteLine($"Поток {threadNumber}: проверяет число {number}");
+                primeCount++;
+            }
+            finally
+            {
+                mutex.ReleaseMutex();
             }
         }
-
-        private static bool IsPrime(int number)
+        else if (syncType == "Semaphore")
         {
-            if (number < 2)
+            semaphore.WaitOne();
+            try
+            {
+                primeCount++;
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }
+    }
+
+    static bool IsPrime(int number)
+    {
+        if (number < 2)
+            return false;
+
+        for (int i = 2; i * i <= number; i++)
+        {
+            if (number % i == 0)
                 return false;
-
-            if (number == 2)
-                return true;
-
-            if (number % 2 == 0)
-                return false;
-
-            int limit = (int)Math.Sqrt(number);
-
-            for (int i = 3; i <= limit; i += 2)
-            {
-                if (number % i == 0)
-                    return false;
-            }
-
-            return true;
         }
+
+        return true;
     }
 }
