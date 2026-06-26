@@ -1,93 +1,66 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Net;
+using System.Net.Http;
 
-namespace Task_2_Sync
+class Program
 {
-    internal class Program
+    static void Main()
     {
-        private static readonly string[] Urls =
+        Console.WriteLine("Задание 2. Синхронная версия");
+
+        string[] urls =
         {
             "https://jsonplaceholder.typicode.com/posts/1",
-            "https://httpbin.org/json",
-            "https://api.github.com"
+            "https://api.github.com/repos/dotnet/runtime",
+            "https://catfact.ninja/fact"
         };
 
-        static void Main()
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        try
         {
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
-            Console.InputEncoding = System.Text.Encoding.UTF8;
+            using HttpClient client = new HttpClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CSharpConsoleApp");
 
-            Stopwatch stopwatch = Stopwatch.StartNew();
-
-            try
+            foreach (string url in urls)
             {
-                foreach (string url in Urls)
-                {
-                    Console.WriteLine();
-                    Console.WriteLine($"Запрос к серверу: {url}");
-
-                    string response = SendRequest(url);
-
-                    Console.WriteLine("Ответ сервера в формате JSON:");
-                    Console.WriteLine(response);
-                }
-
-                stopwatch.Stop();
+                string json = GetJsonSync(client, url);
 
                 Console.WriteLine();
-                Console.WriteLine($"Общее время работы: {stopwatch.ElapsedMilliseconds} мс");
-            }
-            catch (Exception ex)
-            {
-                stopwatch.Stop();
-
-                Console.WriteLine();
-                Console.WriteLine("Ошибка при выполнении запроса:");
-                Console.WriteLine(ex.Message);
-                Console.WriteLine($"Время до ошибки: {stopwatch.ElapsedMilliseconds} мс");
+                Console.WriteLine($"Ответ от сервера: {url}");
+                Console.WriteLine(json);
             }
 
-            Console.ReadKey();
+            stopwatch.Stop();
+
+            Console.WriteLine();
+            Console.WriteLine($"Общее время работы: {stopwatch.ElapsedMilliseconds} мс");
         }
-
-        private static string SendRequest(string url)
+        catch (Exception ex)
         {
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-            request.Method = "GET";
+            stopwatch.Stop();
 
-            request.UserAgent = "CSharpConsoleApp";
-
-            try
-            {
-                using HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-
-                if ((int)response.StatusCode < 200 || (int)response.StatusCode >= 300)
-                {
-                    throw new Exception($"Сервер вернул негативный ответ: {(int)response.StatusCode} {response.StatusDescription}");
-                }
-
-                using Stream responseStream = response.GetResponseStream();
-
-                if (responseStream == null)
-                {
-                    throw new Exception("Сервер вернул пустой ответ.");
-                }
-
-                using StreamReader reader = new StreamReader(responseStream);
-
-                return reader.ReadToEnd();
-            }
-            catch (WebException ex)
-            {
-                if (ex.Response is HttpWebResponse errorResponse)
-                {
-                    throw new Exception($"Сервер вернул ошибку: {(int)errorResponse.StatusCode} {errorResponse.StatusDescription}");
-                }
-
-                throw new Exception($"Ошибка соединения: {ex.Message}");
-            }
+            Console.WriteLine();
+            Console.WriteLine("Ошибка при выполнении запроса:");
+            Console.WriteLine(ex.Message);
+            Console.WriteLine($"Время до ошибки: {stopwatch.ElapsedMilliseconds} мс");
         }
+    }
+
+    static string GetJsonSync(HttpClient client, string url)
+    {
+        using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
+        using HttpResponseMessage response = client.Send(request);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new Exception($"Сервер {url} вернул ошибку: {(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+
+        using Stream stream = response.Content.ReadAsStream();
+        using StreamReader reader = new StreamReader(stream);
+
+        return reader.ReadToEnd();
     }
 }
