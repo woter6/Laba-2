@@ -2,168 +2,150 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Threading;
 
-namespace Task_1_2
+class Program
 {
-    internal class Program
+    private const int SetCount = 15;
+    private const int NumbersInSet = 100;
+    private const string FileName = "numbers.txt";
+
+    private static readonly List<string> log = new List<string>();
+    private static readonly object logLocker = new object();
+
+    private static readonly Mutex totalMutex = new Mutex();
+    private static int totalSum = 0;
+
+    private static Semaphore semaphore;
+
+    static void Main()
     {
-        private const string FileName = "number_sets.txt";
-        private const int SetsCount = 15;
-        private const int NumbersInSet = 100;
+        Console.WriteLine("Задание 1.2");
 
-        private static readonly object ResultsLocker = new object();
-        private static readonly Mutex TotalMutex = new Mutex();
+        Console.Write("Введите максимальное количество потоков n: ");
+        int n = int.Parse(Console.ReadLine());
 
-        private static readonly List<ResultInfo> Results = new List<ResultInfo>();
+        semaphore = new Semaphore(n, n);
 
-        private static int _totalSum;
-
-        static void Main()
+        if (!File.Exists(FileName))
         {
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
-            Console.InputEncoding = System.Text.Encoding.UTF8;
-
-            Console.Write("Введите максимальное количество потоков, которые могут одновременно считать сумму: ");
-
-            int maxConcurrentThreads;
-
-            while (!int.TryParse(Console.ReadLine(), out maxConcurrentThreads) || maxConcurrentThreads <= 0)
-            {
-                Console.Write("Ошибка. Введите положительное число: ");
-            }
-
-            EnsureDataFileExists();
-
-            List<int[]> numberSets = LoadNumberSets();
-
-            Semaphore semaphore = new Semaphore(maxConcurrentThreads, maxConcurrentThreads);
-            Thread[] threads = new Thread[numberSets.Count];
-
-            Stopwatch stopwatch = Stopwatch.StartNew();
-
-            for (int i = 0; i < numberSets.Count; i++)
-            {
-                int setNumber = i + 1;
-                int[] numbers = numberSets[i];
-
-                threads[i] = new Thread(() =>
-                {
-                    ProcessSet(setNumber, numbers, semaphore);
-                });
-
-                threads[i].Start();
-            }
-
-            foreach (Thread thread in threads)
-            {
-                thread.Join();
-            }
-
-            stopwatch.Stop();
-
-            Console.WriteLine();
-            Console.WriteLine("Результаты подсчёта:");
-            Console.WriteLine("------------------------------------");
-
-            foreach (ResultInfo result in Results.OrderBy(r => r.SetNumber))
-            {
-                Console.WriteLine($"Набор {result.SetNumber}: сумма = {result.Sum}, поток = {result.ThreadId}");
-            }
-
-            Console.WriteLine("------------------------------------");
-            Console.WriteLine($"Общий итог по всем наборам: {_totalSum}");
-            Console.WriteLine($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
-
-            Console.ReadKey();
-        }
-
-        private static void ProcessSet(int setNumber, int[] numbers, Semaphore semaphore)
-        {
-            semaphore.WaitOne();
-
-            try
-            {
-                int sum = numbers.Sum();
-                int threadId = Thread.CurrentThread.ManagedThreadId;
-
-                lock (ResultsLocker)
-                {
-                    Results.Add(new ResultInfo
-                    {
-                        SetNumber = setNumber,
-                        Sum = sum,
-                        ThreadId = threadId
-                    });
-                }
-
-                TotalMutex.WaitOne();
-                try
-                {
-                    _totalSum += sum;
-                }
-                finally
-                {
-                    TotalMutex.ReleaseMutex();
-                }
-
-                Console.WriteLine($"Поток {threadId}: обработал набор {setNumber}, сумма = {sum}");
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        }
-
-        private static void EnsureDataFileExists()
-        {
-            if (File.Exists(FileName))
-                return;
-
-            Random random = new Random();
-
-            using StreamWriter writer = new StreamWriter(FileName);
-
-            for (int i = 0; i < SetsCount; i++)
-            {
-                int[] numbers = new int[NumbersInSet];
-
-                for (int j = 0; j < NumbersInSet; j++)
-                {
-                    numbers[j] = random.Next(1, 101);
-                }
-
-                writer.WriteLine(string.Join(" ", numbers));
-            }
-
+            GenerateNumberSets();
             Console.WriteLine($"Файл {FileName} создан.");
         }
 
-        private static List<int[]> LoadNumberSets()
+        List<int[]> sets = ReadNumberSets();
+
+        Thread[] threads = new Thread[sets.Count];
+
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        for (int i = 0; i < sets.Count; i++)
         {
-            List<int[]> sets = new List<int[]>();
+            int setNumber = i + 1;
+            int[] numbers = sets[i];
 
-            string[] lines = File.ReadAllLines(FileName);
-
-            foreach (string line in lines)
+            threads[i] = new Thread(() =>
             {
-                int[] numbers = line
-                    .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(int.Parse)
-                    .ToArray();
+                ProcessSet(setNumber, numbers);
+            });
 
-                sets.Add(numbers);
+            threads[i].Start();
+        }
+
+        for (int i = 0; i < threads.Length; i++)
+        {
+            threads[i].Join();
+        }
+
+        stopwatch.Stop();
+
+        Console.WriteLine();
+        Console.WriteLine("Результаты подсчёта:");
+
+        foreach (string item in log)
+        {
+            Console.WriteLine(item);
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Общий итог всех сумм: {totalSum}");
+        Console.WriteLine($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
+    }
+
+    static void GenerateNumberSets()
+    {
+        Random random = new Random();
+
+        using StreamWriter writer = new StreamWriter(FileName);
+
+        for (int i = 0; i < SetCount; i++)
+        {
+            List<int> numbers = new List<int>();
+
+            for (int j = 0; j < NumbersInSet; j++)
+            {
+                numbers.Add(random.Next(1, 101));
             }
 
-            return sets;
+            writer.WriteLine(string.Join(" ", numbers));
         }
     }
 
-    internal class ResultInfo
+    static List<int[]> ReadNumberSets()
     {
-        public int SetNumber { get; set; }
-        public int Sum { get; set; }
-        public int ThreadId { get; set; }
+        List<int[]> sets = new List<int[]>();
+
+        string[] lines = File.ReadAllLines(FileName);
+
+        foreach (string line in lines)
+        {
+            string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            int[] numbers = new int[parts.Length];
+
+            for (int i = 0; i < parts.Length; i++)
+            {
+                numbers[i] = int.Parse(parts[i]);
+            }
+
+            sets.Add(numbers);
+        }
+
+        return sets;
+    }
+
+    static void ProcessSet(int setNumber, int[] numbers)
+    {
+        semaphore.WaitOne();
+
+        try
+        {
+            int sum = 0;
+
+            foreach (int number in numbers)
+            {
+                sum += number;
+            }
+
+            int threadId = Thread.CurrentThread.ManagedThreadId;
+
+            lock (logLocker)
+            {
+                log.Add($"Набор {setNumber}: сумма = {sum}, поток = {threadId}");
+            }
+
+            totalMutex.WaitOne();
+            try
+            {
+                totalSum += sum;
+            }
+            finally
+            {
+                totalMutex.ReleaseMutex();
+            }
+        }
+        finally
+        {
+            semaphore.Release();
+        }
     }
 }
